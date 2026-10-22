@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Self-hosted fonts (works offline) ---- */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/inter-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('fonts/inter-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 900; font-display: swap; src: url('fonts/inter-latin-900-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Space Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/space-mono-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Space Mono'; font-style: normal; font-weight: 700; font-display: swap; src: url('fonts/space-mono-latin-700-normal.woff2') format('woff2'); }
+/* Fallback for phones that don't ship Comic Sans (most Androids). Same idea, open license.
+   Declared as weight 400 on purpose: asking for bold on top of the already-bold file makes the browser
+   thicken it a bit more, which gets it closer to how heavy real Comic Sans Bold looks. */
+@font-face { font-family: 'Comic Neue'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/comic-neue-latin-700-normal.woff2') format('woff2'); }
+
+* { border-color: #000000; }
+
+html { background-color: #F5F5F0; }
+
+body {
+  background-color: #F5F5F0;
+  color: #000000;
+  font-family: 'Space Mono', monospace;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  overflow-x: hidden;
+  padding-bottom: calc(3rem + env(safe-area-inset-bottom));
+}
+.selectable { -webkit-user-select: text; user-select: text; }
+
+/* The logo. Real Comic Sans where the phone has it, Comic Neue everywhere else. */
+.logo { font-family: 'Comic Sans MS', 'Comic Sans', 'Comic Neue', cursive; font-weight: 700; letter-spacing: -0.01em; }
+.no-comic-sans .logo { -webkit-text-stroke: 2px currentColor; }
+
+.border-b-sharp { border-bottom: 1.5px solid #000000; }
+.border-t-sharp { border-top: 1.5px solid #000000; }
+.border-l-sharp { border-left: 1.5px solid #000000; }
+.border-r-sharp { border-right: 1.5px solid #000000; }
+.border-sharp   { border: 1.5px solid #000000; }
+
+/* Blue coiled cable header (padded so it tucks under the iOS status bar) */
+.coil-container {
+  width: 100%;
+  height: calc(32px + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  background: #0055FF;
+  overflow: hidden;
+  border-bottom: 1.5px solid #000000;
+  position: relative;
+}
+.coil-path { stroke: #00F0FF; stroke-width: 3.5; fill: none; animation: coilScroll 2.5s linear infinite; }
+@keyframes coilScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-40px); } }
+
+/* Tactile brutalist buttons */
+.btn-edge, .btn-pink, .btn-cyan, .btn-yellow {
+  border: 1.5px solid #000000;
+  box-shadow: 4px 4px 0px #000000;
+  font-weight: 700;
+  transition: all 0.08s ease;
+}
+.btn-edge   { background: #21FF00; color: #000000; text-transform: uppercase; }
+.btn-pink   { background: #FF007A; color: #FFFFFF; }
+.btn-cyan   { background: #00F0FF; color: #000000; }
+.btn-yellow { background: #FFE600; color: #000000; }
+.btn-edge:active, .btn-pink:active, .btn-cyan:active, .btn-yellow:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px #000000;
+}
+button:disabled { opacity: 0.4; pointer-events: none; }
+
+/* Slider */
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; background: transparent; }
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; height: 30px; width: 22px; background: #FF007A;
+  border: 1.5px solid #000; box-shadow: 2px 2px 0px #000; cursor: pointer; margin-top: -12px;
+}
+input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 10px; background: #000000; border: 1px solid #000; }
+input[type=range]::-moz-range-thumb { height: 30px; width: 22px; background: #FF007A; border: 1.5px solid #000; border-radius: 0; box-shadow: 2px 2px 0px #000; cursor: pointer; }
+input[type=range]::-moz-range-track { width: 100%; height: 10px; background: #000000; border: 1px solid #000; }
+
+/* Text fields (16px so iOS doesn't zoom on focus) */
+.field {
+  width: 100%; border: 1.5px solid #000000; background: #FFFFFF; border-radius: 0;
+  padding: 0.5rem 0.6rem; font-family: 'Space Mono', monospace; font-weight: 700; font-size: 16px;
+  text-transform: uppercase; box-shadow: 2px 2px 0px #000000; margin-top: 0.25rem; display: block;
+  -webkit-user-select: text; user-select: text;
+}
+.field:focus { outline: none; background: #FFE600; }
+
+.badge-locked { filter: grayscale(1); opacity: 0.35; }
+.modal-bg { background: rgba(10, 10, 12, 0.85); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+
+@keyframes pulseEdge { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(2px, 2px); } }
+.pulse-edge { animation: pulseEdge 1s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .coil-path, .pulse-edge { animation: none; }
+}
