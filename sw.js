@@ -1,12 +1,12 @@
 /*
- * EDGE service worker: makes the app load offline.
+ * Let It Die service worker: makes the app load offline.
  *  - Your own files: network first (so updates show up right away, and every file in a
  *    release stays in sync), falling back to the saved copy after 3 seconds or when offline.
  *  - Fonts and icons never change: saved copy first.
  *  - Anything on another domain (the crew server) is left completely alone.
  * Bump VERSION when you ship a release.
  */
-const VERSION = 'edge-v1.2.0';
+const VERSION = 'edge-v1.5.0';
 const NETWORK_TIMEOUT_MS = 3000;
 const PRECACHE = [
   './', 'index.html', 'styles.css', 'config.js', 'engine.js', 'crew.js', 'app.js', 'manifest.webmanifest',

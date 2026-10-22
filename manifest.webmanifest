@@ -1,7 +1,7 @@
 {
-  "name": "EDGE",
-  "short_name": "EDGE",
-  "description": "Win by living at 1%. Lowest battery and longest blackout in your crew wins.",
+  "name": "Let It Die",
+  "short_name": "Let It Die",
+  "description": "Keep your phone dead or low as much of the day as you can. Lowest battery and longest blackout in your crew wins.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

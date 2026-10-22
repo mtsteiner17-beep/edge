@@ -1,6 +1,6 @@
 /*
- * EDGE crew client.
- * Talks to the four Postgres functions in supabase/schema.sql through Supabase's REST "rpc" endpoint.
+ * Let It Die crew client.
+ * Talks to the Postgres functions in supabase/schema.sql through Supabase's REST "rpc" endpoint.
  * No SDK, just fetch. If config.js has no SUPABASE_URL / SUPABASE_KEY, crew mode is off and this
  * file does nothing.
  */
@@ -74,6 +74,7 @@
       CREW_FULL: 'THAT CREW IS FULL (30 MAX)',
       CODE_TAKEN: 'THAT CODE IS TAKEN. TRY AGAIN',
       NOT_IN_CREW: 'YOU\'RE NOT IN THAT CREW ANYMORE',
+      BAD_TOKEN: 'SETUP CODE NOT RECOGNIZED. MAKE A NEW ONE',
     };
     if (map[m]) return map[m];
     if (err && err.pg === 'PGRST202') return 'DATABASE NOT SET UP YET. RUN supabase/schema.sql';
@@ -110,21 +111,65 @@
     throw lastErr;
   }
 
-  function report(snap, opts) {
+  // The phone's timezone decides when the crew's week ends (Monday midnight, in the oldest member's zone).
+  function timezone() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) { return null; }
+  }
+
+  // If the database hasn't been upgraded with the weekly race yet, the server doesn't know about p_tz.
+  // Fall back to the old call so reporting keeps working, and remember it for this page load.
+  let oldServer = false;
+
+  async function report(snap, opts) {
     const m = me();
-    if (!m) return Promise.resolve(null);
-    return rpc('edge_report', {
+    if (!m) return null;
+    const body = {
       p_crew: m.code, p_player: m.player, p_key: m.key,
       p_level: snap.level, p_charging: snap.charging, p_points: snap.points, p_streak: snap.streak,
       p_record_dead: snap.record_dead, p_total_dead: snap.total_dead, p_lowest: snap.lowest,
       p_dead_since: snap.dead_since,
-    }, opts);
+    };
+    const tz = timezone();
+    if (tz && !oldServer) body.p_tz = tz;
+    try {
+      return await rpc('edge_report', body, opts);
+    } catch (e) {
+      if (body.p_tz && e && e.pg === 'PGRST202') {
+        oldServer = true;
+        delete body.p_tz;
+        return rpc('edge_report', body, opts);
+      }
+      throw e;
+    }
   }
 
   function board() {
     const m = me();
     if (!m) return Promise.resolve(null);
     return rpc('edge_board', { p_crew: m.code, p_player: m.player });
+  }
+
+  // ---- iPhone auto check-in (readings posted by a Shortcut while the app was closed) ----
+  // The "cursor" is the timestamp of the newest reading we've already scored. It lives in the same
+  // saved identity, so leaving a crew clears it.
+  function setCursor(v) {
+    const m = me();
+    if (m) { m.since = v; saveMe(m); }
+  }
+
+  async function makeToken() {
+    const m = me();
+    if (!m) throw new Error('NOT_IN_CREW');
+    const r = await rpc('edge_make_token', { p_crew: m.code, p_player: m.player, p_key: m.key });
+    return r && r.token;
+  }
+
+  async function pingsSince() {
+    const m = me();
+    if (!m) return { pings: [] };
+    const body = { p_crew: m.code, p_player: m.player, p_key: m.key };
+    if (m.since) body.p_since = m.since;
+    return rpc('edge_pings_since', body);
   }
 
   async function leave() {
@@ -134,5 +179,5 @@
     clearMe();
   }
 
-  root.EdgeCrew = { enabled, me, join, create, report, board, leave, friendlyError, randomCode };
+  root.EdgeCrew = { enabled, me, join, create, report, board, leave, makeToken, pingsSince, setCursor, friendlyError, randomCode };
 })(typeof self !== 'undefined' ? self : this);

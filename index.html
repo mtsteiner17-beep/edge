@@ -3,14 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>EDGE</title>
-    <meta name="description" content="Win by living at 1%. Lowest battery and longest blackout in your crew wins.">
+    <title>Let It Die</title>
+    <meta name="description" content="Keep your phone dead or low as much of the day as you can. Lowest battery and longest blackout in your crew wins.">
+
+    <!-- link preview when someone pastes the invite in a group chat -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Let It Die">
+    <meta property="og:title" content="Let It Die">
+    <meta property="og:description" content="Keep your phone dead or low as much of the day as you can. Race your friends to 1%.">
+    <meta property="og:url" content="https://phone.masen.site/">
+    <meta property="og:image" content="https://phone.masen.site/icons/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Let It Die. Race your friends to 1%.">
+    <meta name="twitter:card" content="summary_large_image">
 
     <meta name="theme-color" content="#0055FF">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="EDGE">
+    <meta name="apple-mobile-web-app-title" content="Let It Die">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
     <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
@@ -23,7 +35,7 @@
 <body class="min-h-[100dvh] flex flex-col justify-between max-w-md mx-auto border-x-sharp bg-[#F5F5F0] relative">
 
     <noscript>
-        <div class="p-4 font-bold text-sm">EDGE needs JavaScript. Turn it on and reload.</div>
+        <div class="p-4 font-bold text-sm">Let It Die needs JavaScript. Turn it on and reload.</div>
     </noscript>
 
     <!-- BLUE COILED CABLE WIRE SVG ACCENT HEADER -->
@@ -35,7 +47,7 @@
 
     <!-- HEADER: logo + install -->
     <header class="p-4 bg-[#F5F5F0] border-b-sharp flex justify-between items-center">
-        <h1 id="app-title" class="logo text-5xl leading-none">EDGE<span class="text-[#FF007A]">.</span></h1>
+        <h1 id="app-title" class="logo text-4xl leading-none uppercase">Let It Die<span class="text-[#FF007A]">.</span></h1>
         <button id="btn-pwa-trigger" class="px-2 py-1 bg-[#00F0FF] border-sharp text-[10px] font-bold shadow-brutal-sm">
             📲 INSTALL
         </button>
@@ -72,6 +84,7 @@
         <div id="manual-override-card" class="border-sharp bg-[#F5F5F0] p-4 shadow-brutal hidden">
             <input type="range" id="manual-battery-slider" min="1" max="100" value="100" aria-label="Your battery percentage">
             <button id="btn-checkin" class="btn-edge w-full mt-3 py-3 text-xs">CHECK IN ⚡</button>
+            <button id="btn-auto" class="btn-cyan w-full mt-3 py-2 text-[10px] hidden">AUTO CHECK-IN</button>
         </div>
 
         <!-- Shutdown logger -->
@@ -148,13 +161,21 @@
                 </div>
             </div>
 
+            <div id="race-strip" class="border-sharp bg-black text-white px-3 py-2 flex items-center justify-between gap-3 text-[10px] font-bold uppercase hidden">
+                <span id="race-left" class="shrink-0"></span>
+                <span id="race-champ" class="truncate text-[#FFE600] text-right"></span>
+            </div>
+
             <div class="flex border-sharp bg-white text-[10px] font-bold uppercase" role="tablist">
-                <button id="sort-low" data-sort="low" class="sort-btn flex-1 py-2 text-center border-r-sharp bg-[#21FF00]">LOWEST NOW</button>
-                <button id="sort-dead" data-sort="dead" class="sort-btn flex-1 py-2 text-center border-r-sharp bg-white">DEAD TIME</button>
-                <button id="sort-points" data-sort="points" class="sort-btn flex-1 py-2 text-center bg-white">POINTS</button>
+                <button id="sort-week" data-sort="week" class="sort-btn flex-1 py-2 text-center border-r-sharp bg-[#21FF00]">WEEK</button>
+                <button id="sort-points" data-sort="points" class="sort-btn flex-1 py-2 text-center border-r-sharp bg-white">ALL TIME</button>
+                <button id="sort-low" data-sort="low" class="sort-btn flex-1 py-2 text-center border-r-sharp bg-white">LOWEST NOW</button>
+                <button id="sort-dead" data-sort="dead" class="sort-btn flex-1 py-2 text-center bg-white">DEAD TIME</button>
             </div>
 
             <ol id="crew-list" class="flex flex-col gap-2"></ol>
+            <button id="btn-crew-invite-big" class="btn-pink py-4 text-base hidden">INVITE FRIENDS</button>
+            <button id="btn-share-board" class="btn-cyan py-3 text-xs hidden">SHARE BOARD</button>
             <div id="crew-status" class="text-[10px] text-gray-600 font-bold uppercase"></div>
             <button id="btn-crew-leave" class="text-[10px] underline text-gray-600 font-bold self-start uppercase">Leave crew</button>
         </div>
@@ -229,7 +250,7 @@
         <div class="bg-[#F5F5F0] border-sharp p-5 shadow-brutal-lg max-w-xs w-full relative">
             <h3 class="text-2xl font-black mb-2">SHUTDOWN ARMED 💀</h3>
             <p class="text-xs text-gray-800 mb-4 border-t-sharp pt-2">
-                Let it die. When it's back on, open EDGE first.
+                Let it die. When it's back on, open Let It Die first.
             </p>
             <button id="btn-close-shutdown-modal" class="btn-edge w-full py-3 text-xs font-bold">OK</button>
         </div>
@@ -248,6 +269,25 @@
             </div>
             <button id="btn-welcome-log" class="btn-edge w-full py-3 text-xs font-bold mb-2">LOG BLACKOUT ⚡</button>
             <button id="btn-welcome-no" class="w-full py-2 bg-white border-sharp text-[11px] font-bold uppercase shadow-brutal-sm">IT NEVER DIED</button>
+        </div>
+    </div>
+
+    <!-- MODAL: auto check-in (iPhone Shortcut) -->
+    <div id="auto-modal" class="fixed inset-0 modal-bg z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-[#F5F5F0] border-sharp p-5 shadow-brutal-lg max-w-xs w-full relative">
+            <button id="btn-close-auto" class="absolute top-2 right-3 text-xl font-bold" aria-label="Close">&times;</button>
+            <h3 class="text-xl font-black mb-3">AUTO CHECK-IN</h3>
+            <ol class="text-xs space-y-3 border-t-sharp pt-3">
+                <li>
+                    <button id="btn-copy-code" class="btn-edge w-full py-2 text-xs">COPY SETUP CODE</button>
+                    <div id="auto-code" class="selectable text-center font-black tracking-widest mt-2 hidden"></div>
+                </li>
+                <li id="auto-add-row" class="hidden">
+                    <button id="btn-add-shortcut" class="btn-cyan w-full py-2 text-xs">ADD SHORTCUT</button>
+                </li>
+                <li>Paste the code into the first box of <strong>Let It Die Check-In</strong>.</li>
+                <li>Shortcuts &gt; Automation &gt; <strong>Battery Level</strong>. Make 4: falls below <strong>15%</strong>, <strong>5%</strong>, <strong>1%</strong>, and rises above <strong>20%</strong>. Each runs <strong>Let It Die Check-In</strong> with <strong>Run Immediately</strong>.</li>
+            </ol>
         </div>
     </div>
 

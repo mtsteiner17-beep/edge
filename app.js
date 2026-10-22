@@ -1,5 +1,5 @@
 /*
- * EDGE UI.
+ * Let It Die UI.
  * Wires the page to the engine (engine.js) and the crew server (crew.js).
  * All the scoring rules live in engine.js; this file is just screens and plumbing.
  */
@@ -35,8 +35,12 @@
   let override = null;             // debug only: { level, charging }
   let activeSticker = 'SURVIVED 1%';
   let currentTab = 'sensor';
-  let sortBy = 'low';
+  let sortBy = 'week';
   let lastBoard = null;
+  let lastBoardAt = 0;             // when we last fetched the board
+  let srvOffset = 0;               // server clock minus this phone's clock (ms), so countdowns agree
+  let lastRollAt = 0;
+  let weekRank = null;             // { rank, total, pts } this week
   let lastReportAt = 0;
   let crewRank = null;             // { rank, total } by "lowest now"
   let fontsReady = false;
@@ -49,9 +53,9 @@
     try {
       const c = document.createElement('canvas').getContext('2d');
       c.font = '700 40px monospace';
-      const plain = c.measureText('EDGE.').width;
+      const plain = c.measureText('LET IT DIE.').width;
       c.font = '700 40px "Comic Sans MS", monospace';
-      return c.measureText('EDGE.').width !== plain;
+      return c.measureText('LET IT DIE.').width !== plain;
     } catch (e) { return true; }
   })();
   document.documentElement.classList.toggle('no-comic-sans', !REAL_COMIC);
@@ -89,6 +93,7 @@
     const t = E.tier(lvl, state.charging);
     $('multiplier-text').textContent = state.charging ? '🔌 CHARGING: 0X' : '⚡ MULTIPLIER ' + t.mult + 'X';
     show('manual-override-card', mode === 'manual');
+    show('btn-auto', mode === 'manual' && Crew.enabled() && !!Crew.me());
 
     // armed shutdown
     const armed = !!state.shutdown;
@@ -157,10 +162,38 @@
     slider.value = Math.max(1, state.level);
     updateCheckinLabel();
     render();
+    pullPings().then(handleShutdownState);
   }
 
   function updateCheckinLabel() {
     $('btn-checkin').textContent = 'CHECK IN AT ' + $('manual-battery-slider').value + '% ⚡';
+  }
+
+  // ---- readings posted by the iPhone Shortcut while the app was closed ---------
+  let pulling = null;
+  function pullPings() {
+    if (mode !== 'manual' || !Crew.enabled() || !Crew.me()) return Promise.resolve();
+    if (pulling) return pulling;
+    pulling = (async () => {
+      try {
+        const r = await Crew.pingsSince();
+        const list = (r && r.pings) || [];
+        if (!list.length) return;
+        const events = [];
+        const now = Date.now();
+        for (const p of list) {
+          const t = Math.min(Date.parse(p.t), now);
+          // only readings newer than what we've already scored (replays and old ones are skipped)
+          if (isFinite(t) && (!state.last || t > state.last.t)) events.push(...E.observe(state, p.level, false, t));
+        }
+        Crew.setCursor(list[list.length - 1].t);
+        save();
+        handleEvents(events);
+        render();
+        scheduleReport(false);
+      } catch (e) { /* offline or not set up: try again next time */ } finally { pulling = null; }
+    })();
+    return pulling;
   }
 
   // ---- shutdown / blackout flow --------------------------------------------
@@ -238,6 +271,7 @@
     show('crew-join', enabled && !me);
     show('crew-board', enabled && !!me);
     if (me) $('crew-code-text').textContent = me.code;
+    show('btn-auto', mode === 'manual' && !!me);
     const invite = $('btn-crew-invite');
     invite.textContent = navigator.share ? 'SHARE INVITE' : 'COPY INVITE';
   }
@@ -248,6 +282,8 @@
     const deadNowS = deadSince ? Math.max(0, (nowSrv - deadSince) / 1000) : 0;
     const stale = ageS > STALE_S;
     return Object.assign({}, p, {
+      week_points: p.week_points || 0,
+      prev_week_points: p.prev_week_points || 0,
       ageS, deadSince, deadNowS, stale,
       group: deadSince ? 0 : stale ? 3 : p.charging ? 2 : 1,
       bestDead: Math.max(p.record_dead, deadNowS),
@@ -255,6 +291,7 @@
   }
 
   const SORTERS = {
+    week: (a, b) => b.week_points - a.week_points || b.points - a.points || a.name.localeCompare(b.name),
     low: (a, b) => a.group - b.group
       || (a.group === 0 ? b.deadNowS - a.deadNowS : a.level - b.level)
       || b.points - a.points,
@@ -262,8 +299,31 @@
     points: (a, b) => b.points - a.points || a.name.localeCompare(b.name),
   };
   const RANK_BG = ['bg-[#21FF00]', 'bg-[#00F0FF]', 'bg-[#FFE600]'];
+  const SORT_KEY = { week: 'week_points', points: 'points' };   // tabs that are a points race
 
-  function rowEl(p, rank) {
+  const pts = (n) => n.toLocaleString() + (n === 1 ? ' PT' : ' PTS');
+
+  // "62 PTS TO PASS BEN" / "LEADING BY 140 PTS". rows are sorted best-first by `key`.
+  function gapText(rows, i, key) {
+    if (rows.length < 2 || (rows[i][key] === 0 && rows[0][key] === 0)) return '';
+    if (i === 0) {
+      const lead = rows[0][key] - rows[1][key];
+      return lead > 0 ? 'LEADING BY ' + pts(lead) : 'TIED FOR THE LEAD';
+    }
+    return pts(rows[i - 1][key] - rows[i][key] + 1) + ' TO PASS ' + rows[i - 1].name.toUpperCase();
+  }
+
+  // "3D 4H" / "4H 05M" / "12M"
+  function fmtLeft(ms) {
+    const m = Math.max(0, Math.floor(ms / 60000));
+    const d = Math.floor(m / 1440);
+    const h = Math.floor((m % 1440) / 60);
+    if (d > 0) return d + 'D ' + h + 'H';
+    if (h > 0) return h + 'H ' + String(m % 60).padStart(2, '0') + 'M';
+    return (m % 60) + 'M';
+  }
+
+  function rowEl(p, rank, extra) {
     const li = document.createElement('li');
     li.className = 'border-sharp p-2 shadow-brutal-sm flex items-center gap-3 ' + (p.me ? 'bg-[#FFE6F2]' : 'bg-white');
 
@@ -275,16 +335,24 @@
     mid.className = 'flex-1 min-w-0';
     const name = document.createElement('div');
     name.className = 'font-black text-sm truncate';
-    name.textContent = p.name.toUpperCase() + (p.me ? ' (YOU)' : '');
+    name.textContent = (extra.crown ? '👑 ' : '') + p.name.toUpperCase() + (p.me ? ' (YOU)' : '');
     const sub = document.createElement('div');
     sub.className = 'text-[10px] text-gray-700 font-bold uppercase leading-tight';
     let subText;
+    const lvl = !p.deadSince && sortBy !== 'low' ? p.level + '% · ' : '';   // the big number is the level on LOWEST NOW
     if (p.deadSince) subText = '💀 SINCE ' + clock(p.deadSince);
     else if (p.charging) subText = '🔌 CHARGING';
     else if (p.stale) subText = '😴 ' + E.fmtDur(p.ageS) + ' AGO';
     else subText = p.ageS < 90 ? '● LIVE' : E.fmtDur(p.ageS) + ' AGO';
-    sub.textContent = subText;
+    if (p.streak >= 2) subText += ' · 🔥 ' + p.streak;
+    sub.textContent = lvl + subText;
     mid.append(name, sub);
+    if (extra.gap) {
+      const gap = document.createElement('div');
+      gap.className = 'text-[10px] font-black text-[#FF007A] uppercase leading-tight';
+      gap.textContent = extra.gap;
+      mid.append(gap);
+    }
 
     const right = document.createElement('div');
     right.className = 'text-right shrink-0';
@@ -292,18 +360,42 @@
     big.className = 'text-xl font-black';
     if (sortBy === 'low') big.textContent = p.deadSince ? 'DEAD' : p.level + '%';
     else if (sortBy === 'dead') big.textContent = E.fmtDur(p.bestDead);
-    else big.textContent = p.points.toLocaleString();
+    else big.textContent = p[SORT_KEY[sortBy]].toLocaleString();
     right.append(big);
+    if (SORT_KEY[sortBy]) {
+      const unit = document.createElement('div');
+      unit.className = 'text-[9px] font-bold text-gray-600 leading-none';
+      unit.textContent = 'PTS';
+      right.append(unit);
+    }
 
     li.append(rankBox, mid, right);
     return li;
+  }
+
+  // week countdown + last week's champion
+  function renderRace() {
+    const strip = $('race-strip');
+    const on = !!(lastBoard && lastBoard.week_ends);
+    strip.classList.toggle('hidden', !on);
+    if (!on) return;
+    const left = Date.parse(lastBoard.week_ends) - (Date.now() + srvOffset);
+    $('race-left').textContent = left > 0 ? 'WEEK ENDS IN ' + fmtLeft(left) : 'NEW WEEK';
+    if (left <= 0 && Date.now() - lastRollAt > 30000) { lastRollAt = Date.now(); refreshBoard({ quiet: true }); }
+    let champ = null;
+    for (const p of lastBoard.players) if ((p.prev_week_points || 0) > (champ ? champ.prev_week_points : 0)) champ = p;
+    $('race-champ').textContent = champ && lastBoard.players.length > 1
+      ? '👑 ' + (champ.me ? 'YOU' : champ.name.toUpperCase()) + ' WON LAST WEEK' : '';
   }
 
   function renderBoard() {
     const list = $('crew-list');
     list.replaceChildren();
     if (!lastBoard) return;
-    const nowSrv = Date.parse(lastBoard.now) || Date.now();
+    const weekly = !!lastBoard.week_ends;      // false until the database has the weekly-race upgrade
+    show('sort-week', weekly);
+    if (!weekly && sortBy === 'week') return setSort('low');
+    const nowSrv = Date.now() + srvOffset;
     const rows = lastBoard.players.map((p) => decorate(p, nowSrv));
 
     // rank for the story card is always by "lowest now"
@@ -311,21 +403,82 @@
     const myIdx = byLow.findIndex((p) => p.me);
     crewRank = myIdx >= 0 ? { rank: myIdx + 1, total: byLow.length } : null;
 
+    // this week's rank, used in invite messages
+    const byWeek = rows.slice().sort(SORTERS.week);
+    const wi = byWeek.findIndex((p) => p.me);
+    weekRank = wi >= 0 ? { rank: wi + 1, total: byWeek.length, pts: byWeek[wi].week_points } : null;
+
     rows.sort(SORTERS[sortBy]);
-    rows.forEach((p, i) => list.appendChild(rowEl(p, i + 1)));
+    const key = SORT_KEY[sortBy];
+    const crown = key && rows.length > 1 && rows[0][key] > 0 ? rows[0].name : null;
+    rows.forEach((p, i) => list.appendChild(rowEl(p, i + 1, {
+      crown: p.name === crown,
+      gap: key && p.me ? gapText(rows, i, key) : '',
+    })));
+
+    const alone = rows.length === 1;
+    show('btn-crew-invite-big', alone);
+    show('btn-share-board', !alone);
+    renderRace();
   }
 
-  async function refreshBoard() {
+  // Tell the player when the standings moved: someone passed them, or they took the lead.
+  const RANK_KEY = 'edge_rank_v1';
+  const WON_KEY = 'edge_won_v1';
+  function noteRankChange() {
+    const mine = Crew.me();
+    if (!mine || !lastBoard || !lastBoard.week_ends || lastBoard.players.length < 2) return;
+    const rows = lastBoard.players
+      .map((p) => Object.assign({}, p, { week_points: p.week_points || 0 }))
+      .sort(SORTERS.week);
+    const me = rows.find((p) => p.me);
+    if (!me) return;
+    const order = rows.map((p) => p.name);
+    let prev = null;
+    try { prev = JSON.parse(store.get(RANK_KEY)); } catch (e) { /* first time */ }
+    store.set(RANK_KEY, JSON.stringify({ code: mine.code, week: lastBoard.week_ends, order }));
+
+    // new week and you won the last one (once per week)
+    let champ = null;
+    for (const p of rows) if ((p.prev_week_points || 0) > (champ ? champ.prev_week_points : 0)) champ = p;
+    if (champ && champ.me && store.get(WON_KEY) !== lastBoard.week_ends) {
+      store.set(WON_KEY, lastBoard.week_ends);
+      toast('👑 YOU WON LAST WEEK');
+      return;
+    }
+
+    if (!prev || prev.code !== mine.code || prev.week !== lastBoard.week_ends) return;
+    const was = prev.order.indexOf(me.name);
+    const now = order.indexOf(me.name);
+    if (was < 0 || now === was) return;
+    if (now < was) {
+      if (now === 0 && me.week_points > 0) toast('👑 YOU TOOK THE LEAD');
+      return;
+    }
+    const passers = order.slice(0, now).filter((n) => prev.order.indexOf(n) > was);
+    if (passers.length) toast(passers[0].toUpperCase() + (passers.length > 1 ? ' +' + (passers.length - 1) : '') + ' PASSED YOU');
+  }
+
+  async function refreshBoard(opts) {
     if (!Crew.enabled() || !Crew.me()) return;
     try {
-      if (state.last) { await Crew.report(snapshotNow()); lastReportAt = Date.now(); }
+      if (state.last && !(opts && opts.quiet)) { await Crew.report(snapshotNow()); lastReportAt = Date.now(); }
       lastBoard = await Crew.board();
+      lastBoardAt = Date.now();
+      srvOffset = (Date.parse(lastBoard.now) || Date.now()) - Date.now();
       renderBoard();
-      setCrewStatus('');
+      noteRankChange();
+      setCrewStatus(lastBoard.week_ends ? '' : 'WEEKLY RACE NEEDS THE NEW supabase/schema.sql');
     } catch (e) {
       setCrewStatus(Crew.friendlyError(e));
       if (lastBoard) renderBoard();
     }
+  }
+
+  // keep the standings fresh (and rivalry toasts coming) even when the player isn't on the crew tab
+  function quietBoard() {
+    if (!Crew.enabled() || !Crew.me() || Date.now() - lastBoardAt < 60 * 1000) return;
+    refreshBoard({ quiet: true });
   }
 
   function setSort(key) {
@@ -407,28 +560,28 @@
   }
 
   // shrink the font until the text fits maxW
-  function fit(text, maxW, weight, family, startPx, minPx) {
+  function fit(c, text, maxW, weight, family, startPx, minPx) {
     let px = startPx;
-    ctx.font = weight + ' ' + px + 'px ' + family;
-    while (px > (minPx || 20) && ctx.measureText(text).width > maxW) {
+    c.font = weight + ' ' + px + 'px ' + family;
+    while (px > (minPx || 20) && c.measureText(text).width > maxW) {
       px -= 2;
-      ctx.font = weight + ' ' + px + 'px ' + family;
+      c.font = weight + ' ' + px + 'px ' + family;
     }
     return px;
   }
 
-  function logoText(text, x, y, color) {
-    ctx.save();
-    ctx.font = '700 130px ' + LOGO;
-    ctx.fillStyle = color;
-    ctx.fillText(text, x, y);
+  function logoText(c, text, x, y, color) {
+    c.save();
+    c.font = '700 130px ' + LOGO;
+    c.fillStyle = color;
+    c.fillText(text, x, y);
     if (!REAL_COMIC) {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 5;
-      ctx.lineJoin = 'round';
-      ctx.strokeText(text, x, y);
+      c.strokeStyle = color;
+      c.lineWidth = 5;
+      c.lineJoin = 'round';
+      c.strokeText(text, x, y);
     }
-    ctx.restore();
+    c.restore();
   }
 
   async function renderStoryCanvas() {
@@ -450,9 +603,9 @@
     ctx.fillRect(40, 40, w - 80, 220);
     ctx.strokeRect(40, 40, w - 80, 220);
     ctx.font = '700 130px ' + LOGO;
-    const edgeW = ctx.measureText('EDGE').width;
-    logoText('EDGE', 80, 195, '#FFFFFF');
-    logoText('.', 80 + edgeW, 195, '#FF007A');
+    const edgeW = ctx.measureText('LET IT DIE').width;
+    logoText(ctx, 'LET IT DIE', 80, 195, '#FFFFFF');
+    logoText(ctx, '.', 80 + edgeW, 195, '#FF007A');
 
     // current voltage
     ctx.fillStyle = '#FFFFFF';
@@ -472,7 +625,7 @@
     ctx.fillStyle = '#000000';
     ctx.font = '700 32px ' + MONO;
     ctx.fillText('RECORD DEAD:', 110, 880);
-    fit(E.fmtDur(state.recordDead), 380, 900, SANS, 100, 40);
+    fit(ctx, E.fmtDur(state.recordDead), 380, 900, SANS, 100, 40);
     ctx.fillText(E.fmtDur(state.recordDead), 110, 1040);
 
     // points (right)
@@ -481,9 +634,9 @@
     ctx.strokeRect(560, 820, 440, 320);
     ctx.fillStyle = '#FFFFFF';
     ctx.font = '700 32px ' + MONO;
-    ctx.fillText('EDGE POINTS:', 590, 880);
+    ctx.fillText('POINTS:', 590, 880);
     const ptsText = E.pointsNow(state).toLocaleString();
-    fit(ptsText, 380, 900, SANS, 85, 36);
+    fit(ctx, ptsText, 380, 900, SANS, 85, 36);
     ctx.fillText(ptsText, 590, 1030);
 
     // flex sticker
@@ -492,7 +645,7 @@
     ctx.strokeRect(80, 1180, w - 160, 220);
     ctx.fillStyle = '#000000';
     const stickerText = '[ ' + activeSticker + ' ]';
-    fit(stickerText, w - 160 - 60, 900, SANS, 62, 28);
+    fit(ctx, stickerText, w - 160 - 60, 900, SANS, 62, 28);
     ctx.textAlign = 'center';
     ctx.fillText(stickerText, w / 2, 1310);
     ctx.textAlign = 'left';
@@ -527,7 +680,7 @@
       boxValue = state.lowest + '%';
     }
     ctx.fillText(boxLabel, 590, 1495);
-    fit(boxValue, 380, 900, SANS, 80, 36);
+    fit(ctx, boxValue, 380, 900, SANS, 80, 36);
     ctx.fillStyle = '#7000FF';
     ctx.fillText(boxValue, 590, 1595);
 
@@ -536,8 +689,8 @@
     ctx.fillRect(40, h - 220, w - 80, 180);
     ctx.strokeRect(40, h - 220, w - 80, 180);
     ctx.fillStyle = '#000000';
-    const mark = CFG.WATERMARK || location.host || 'EDGE';
-    fit(mark, w - 160, 700, MONO, 42, 20);
+    const mark = CFG.WATERMARK || location.host || 'LET IT DIE';
+    fit(ctx, mark, w - 160, 700, MONO, 42, 20);
     ctx.fillText(mark, 80, h - 110);
   }
 
@@ -557,12 +710,146 @@
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'EDGE-Story-' + Date.now() + '.png';
+    a.download = 'LetItDie-Story-' + Date.now() + '.png';
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
     toast('SAVED');
+  }
+
+  // ---- invites -------------------------------------------------------------
+  function inviteMessage() {
+    if (weekRank && weekRank.total > 1 && weekRank.pts > 0) {
+      return "I'm #" + weekRank.rank + ' of ' + weekRank.total + ' on Let It Die this week. Come beat me.';
+    }
+    return 'Race me to 1% on Let It Die.';
+  }
+
+  async function shareInvite() {
+    const me = Crew.me();
+    if (!me) return;
+    const url = inviteUrl(me.code);
+    const text = inviteMessage() + ' Crew code ' + me.code;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Join my Let It Die crew', text, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    toast((await copyText(text + ' ' + url)) ? 'COPIED' : url);
+  }
+
+  // ---- the standings as a 1080x1920 picture -----------------------------------------
+  async function boardCardBlob() {
+    await ensureFonts();
+    const me = Crew.me();
+    const w = 1080;
+    const h = 1920;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d');
+    const nowSrv = Date.now() + srvOffset;
+    const rows = lastBoard.players.map((p) => decorate(p, nowSrv)).sort(SORTERS.week);
+    const myIdx = rows.findIndex((p) => p.me);
+
+    g.textAlign = 'left';
+    g.fillStyle = '#F5F5F0';
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#000000';
+    g.lineWidth = 14;
+    g.strokeRect(40, 40, w - 80, h - 80);
+
+    // header
+    g.fillStyle = '#0055FF';
+    g.fillRect(40, 40, w - 80, 220);
+    g.strokeRect(40, 40, w - 80, 220);
+    g.font = '700 130px ' + LOGO;
+    const dieW = g.measureText('LET IT DIE').width;
+    logoText(g, 'LET IT DIE', 80, 195, '#FFFFFF');
+    logoText(g, '.', 80 + dieW, 195, '#FF007A');
+
+    // week banner
+    g.fillStyle = '#000000';
+    g.fillRect(80, 300, w - 160, 170);
+    g.strokeRect(80, 300, w - 160, 170);
+    g.fillStyle = '#FFE600';
+    g.font = '700 38px ' + MONO;
+    g.fillText('THIS WEEK', 120, 360);
+    g.fillStyle = '#FFFFFF';
+    const left = Date.parse(lastBoard.week_ends) - nowSrv;
+    const endsText = left > 0 ? 'ENDS IN ' + fmtLeft(left) : 'NEW WEEK';
+    fit(g, endsText, w - 240, 900, SANS, 64, 30);
+    g.fillText(endsText, 120, 440);
+
+    // standings (top 6; if you're lower down, you take the last slot so you always see yourself)
+    let shown = rows.map((p, i) => ({ p, rank: i + 1 })).slice(0, 6);
+    if (myIdx >= 6) shown[5] = { p: rows[myIdx], rank: myIdx + 1 };
+    const colors = ['#21FF00', '#00F0FF', '#FFE600'];
+    const rowH = 150;
+    let y = 510;
+    shown.forEach(({ p, rank }) => {
+      g.fillStyle = colors[rank - 1] || '#FFFFFF';
+      g.fillRect(80, y, 130, rowH);
+      g.strokeRect(80, y, 130, rowH);
+      g.fillStyle = p.me ? '#FFE6F2' : '#FFFFFF';
+      g.fillRect(210, y, w - 290, rowH);
+      g.strokeRect(210, y, w - 290, rowH);
+
+      g.fillStyle = '#000000';
+      g.textAlign = 'center';
+      g.font = '900 56px ' + SANS;
+      g.fillText('#' + rank, 145, y + 92);
+      g.textAlign = 'left';
+
+      const crown = rank === 1 && rows.length > 1 && p.week_points > 0 ? '👑 ' : '';
+      const label = crown + p.name.toUpperCase() + (p.me ? ' (YOU)' : '');
+      fit(g, label, 520, 900, SANS, 54, 26);
+      g.fillText(label, 236, y + 72);
+      g.font = '700 28px ' + MONO;
+      g.fillStyle = '#444444';
+      g.fillText((p.deadSince ? '💀 DEAD' : p.level + '% NOW') + (p.streak >= 2 ? '  🔥 ' + p.streak : ''), 236, y + 118);
+
+      g.textAlign = 'right';
+      g.fillStyle = '#000000';
+      const ptsStr = p.week_points.toLocaleString();
+      fit(g, ptsStr, 230, 900, SANS, 60, 28);
+      g.fillText(ptsStr, w - 120, y + 84);
+      g.font = '700 24px ' + MONO;
+      g.fillStyle = '#444444';
+      g.fillText('PTS', w - 120, y + 122);
+      g.textAlign = 'left';
+      y += rowH + 20;
+    });
+
+    // how to join
+    g.fillStyle = '#FFE600';
+    g.fillRect(40, h - 360, w - 80, 320);
+    g.strokeRect(40, h - 360, w - 80, 320);
+    g.fillStyle = '#000000';
+    g.font = '700 34px ' + MONO;
+    g.fillText('JOIN THE CREW', 80, h - 295);
+    g.textAlign = 'center';
+    fit(g, me.code, w - 200, 900, SANS, 170, 60);
+    g.fillText(me.code, w / 2, h - 150);
+    g.textAlign = 'left';
+    const link = location.host + location.pathname.replace(/index\.html$/, '').replace(/\/$/, '') + '/#crew=' + me.code;   // the real address, never the decorative watermark
+    fit(g, link, w - 160, 700, MONO, 32, 18);
+    g.fillText(link, 80, h - 78);
+
+    return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
+  }
+
+  async function shareBoard() {
+    if (!lastBoard || !Crew.me()) return;
+    const blob = await boardCardBlob();
+    if (!blob) return;
+    const me = Crew.me();
+    const file = new File([blob], 'let-it-die-board.png', { type: 'image/png' });
+    const text = inviteMessage() + ' ' + inviteUrl(me.code);
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Let It Die', text }); } catch (e) { /* cancelled */ }
+    } else {
+      downloadBlob(blob);
+    }
   }
 
   // ---- wire up the buttons ---------------------------------------------------
@@ -572,10 +859,29 @@
 
     // manual check-in
     $('manual-battery-slider').addEventListener('input', updateCheckinLabel);
-    $('btn-checkin').addEventListener('click', () => {
+    $('btn-checkin').addEventListener('click', async () => {
       const lvl = Number($('manual-battery-slider').value);
+      await pullPings();               // score anything the Shortcut reported first, so the order is right
       sight(lvl, false);
     });
+
+    // auto check-in (iPhone Shortcut)
+    $('btn-auto').addEventListener('click', () => {
+      $('auto-code').classList.add('hidden');
+      show('auto-add-row', !!CFG.SHORTCUT_URL);
+      show('auto-modal', true);
+    });
+    $('btn-close-auto').addEventListener('click', () => show('auto-modal', false));
+    $('btn-copy-code').addEventListener('click', () => withBusy(['btn-copy-code'], async () => {
+      try {
+        const code = await Crew.makeToken();
+        const box = $('auto-code');
+        box.textContent = code;
+        box.classList.remove('hidden');
+        toast((await copyText(code)) ? 'COPIED' : 'COPY IT FROM THE BOX');
+      } catch (e) { toast(Crew.friendlyError(e)); }
+    }));
+    $('btn-add-shortcut').addEventListener('click', () => { if (CFG.SHORTCUT_URL) window.location.href = CFG.SHORTCUT_URL; });
 
     // shutdown logger
     $('btn-mark-shutdown').addEventListener('click', () => {
@@ -642,21 +948,16 @@
       });
     });
     $('btn-crew-refresh').addEventListener('click', () => { refreshBoard(); });
-    $('btn-crew-invite').addEventListener('click', async () => {
-      const me = Crew.me();
-      if (!me) return;
-      const url = inviteUrl(me.code);
-      if (navigator.share) {
-        try { await navigator.share({ title: 'Join my EDGE crew', text: 'Race me to 1%. Crew code ' + me.code, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
-      }
-      toast((await copyText(url)) ? 'COPIED' : url);
-    });
+    $('btn-crew-invite').addEventListener('click', shareInvite);
+    $('btn-crew-invite-big').addEventListener('click', shareInvite);
+    $('btn-share-board').addEventListener('click', () => withBusy(['btn-share-board'], shareBoard));
     $('btn-crew-leave').addEventListener('click', async () => {
       const me = Crew.me();
       if (!me || !window.confirm('Leave crew ' + me.code + '? Your row is removed for everyone.')) return;
       await Crew.leave();
       lastBoard = null;
       crewRank = null;
+      weekRank = null;
       $('crew-list').replaceChildren();
       renderCrewPanels();
     });
@@ -672,10 +973,10 @@
       await renderStoryCanvas();
       const blob = await canvasBlob();
       if (!blob) return;
-      const file = new File([blob], 'edge-voltage-card.png', { type: 'image/png' });
+      const file = new File([blob], 'let-it-die-card.png', { type: 'image/png' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
-          await navigator.share({ files: [file], title: 'EDGE // Voltage Gambler', text: 'Living at ' + state.level + '% on EDGE.' });
+          await navigator.share({ files: [file], title: 'Let It Die', text: 'Living at ' + state.level + '% on Let It Die.' });
         } catch (e) { /* cancelled */ }
       } else {
         downloadBlob(blob);
@@ -726,9 +1027,9 @@
     // lifecycle
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
-        handleShutdownState();
+        pullPings().then(handleShutdownState);
         if (mode === 'api') sightApi();
-        if (currentTab === 'crew') refreshBoard();
+        if (currentTab === 'crew') refreshBoard(); else quietBoard();
       } else {
         scheduleReport(true, true);
       }
@@ -739,7 +1040,8 @@
     setInterval(() => {
       if (document.visibilityState !== 'visible') return;
       if (mode === 'api') sightApi();
-      else render(); // keeps streak/stats honest at midnight even in manual mode
+      else { render(); pullPings(); } // manual mode: keeps stats honest at midnight and picks up Shortcut readings
+      if (currentTab === 'crew') renderRace();
     }, TICK_MS);
     setInterval(() => {
       if (document.visibilityState === 'visible' && currentTab === 'crew') refreshBoard();
@@ -761,6 +1063,7 @@
     render();
     handleShutdownState();
     initBattery();
+    quietBoard();
 
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
       navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is optional */ });

@@ -1,5 +1,5 @@
 /*
- * EDGE game engine.
+ * Let It Die game engine.
  * Pure logic, no DOM, no network. Runs in the browser (window.EdgeEngine) and in Node (tests/).
  *
  * The idea: a web app can't run while the phone is locked or dead, so we never try to "watch" the
