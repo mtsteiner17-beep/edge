@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>EDGE</title>
+    <meta name="description" content="Win by living at 1%. Lowest battery and longest blackout in your crew wins.">
+
+    <meta name="theme-color" content="#0055FF">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="EDGE">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+    <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+    <link rel="preload" href="fonts/inter-latin-900-normal.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="fonts/space-mono-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="min-h-[100dvh] flex flex-col justify-between max-w-md mx-auto border-x-sharp bg-[#F5F5F0] relative">
+
+    <noscript>
+        <div class="p-4 font-bold text-sm">EDGE needs JavaScript. Turn it on and reload.</div>
+    </noscript>
+
+    <!-- BLUE COILED CABLE WIRE SVG ACCENT HEADER -->
+    <div class="coil-container flex items-center" aria-hidden="true">
+        <svg width="600" height="32" viewBox="0 0 600 32" preserveAspectRatio="none">
+            <path class="coil-path" d="M -40,16 Q -30,2 -20,16 T 0,16 T 20,16 T 40,16 T 60,16 T 80,16 T 100,16 T 120,16 T 140,16 T 160,16 T 180,16 T 200,16 T 220,16 T 240,16 T 260,16 T 280,16 T 300,16 T 320,16 T 340,16 T 360,16 T 380,16 T 400,16 T 420,16 T 440,16 T 460,16 T 480,16 T 500,16 T 520,16 T 540,16 T 560,16 T 580,16 T 600,16 T 620,16 T 640,16" />
+        </svg>
+    </div>
+
+    <!-- HEADER: logo + install -->
+    <header class="p-4 bg-[#F5F5F0] border-b-sharp flex justify-between items-center">
+        <h1 id="app-title" class="logo text-5xl leading-none">EDGE<span class="text-[#FF007A]">.</span></h1>
+        <button id="btn-pwa-trigger" class="px-2 py-1 bg-[#00F0FF] border-sharp text-[10px] font-bold shadow-brutal-sm">
+            📲 INSTALL
+        </button>
+    </header>
+
+    <!-- TAB NAVIGATION BAR (the crew tab only shows when crews are set up in config.js) -->
+    <nav class="flex border-b-sharp bg-white text-xs font-bold uppercase" role="tablist">
+        <button id="tab-sensor" role="tab" aria-selected="true" class="flex-1 py-3 text-center border-r-sharp bg-[#FFE600] tab-btn">[ SENSOR ]</button>
+        <button id="tab-crew" role="tab" aria-selected="false" class="flex-1 py-3 text-center border-r-sharp bg-[#F5F5F0] tab-btn hidden">[ CREW ]</button>
+        <button id="tab-badges" role="tab" aria-selected="false" class="flex-1 py-3 text-center border-r-sharp bg-[#F5F5F0] tab-btn">[ BADGES ]</button>
+        <button id="tab-share" role="tab" aria-selected="false" class="flex-1 py-3 text-center bg-[#F5F5F0] tab-btn">[ STORY ]</button>
+    </nav>
+
+    <!-- VIEW 1: SENSOR & SHUTDOWN -->
+    <main id="view-sensor" class="flex-1 flex flex-col p-4 gap-4">
+
+        <!-- Live battery card -->
+        <div class="border-sharp bg-white p-5 shadow-brutal">
+            <div class="flex items-center justify-between">
+                <span id="battery-level-text" class="text-7xl font-black tracking-tighter leading-none" style="font-family: 'Inter', sans-serif;">--%</span>
+
+                <div class="w-14 h-24 border-sharp p-1 flex flex-col justify-end bg-gray-100 relative shadow-brutal-sm" aria-hidden="true">
+                    <div class="w-5 h-2 bg-black absolute -top-2 left-3.5 border-sharp"></div>
+                    <div id="battery-fill-bar" class="w-full bg-[#00F0FF] border-t-sharp transition-all duration-300" style="height: 50%;"></div>
+                </div>
+            </div>
+
+            <div id="multiplier-box" class="mt-4 p-2 bg-[#FFE600] border-sharp text-xs font-bold">
+                <span id="multiplier-text">⚡ MULTIPLIER 0X</span>
+            </div>
+        </div>
+
+        <!-- Manual check-in (only shown when the browser can't read the battery, e.g. iPhone) -->
+        <div id="manual-override-card" class="border-sharp bg-[#F5F5F0] p-4 shadow-brutal hidden">
+            <input type="range" id="manual-battery-slider" min="1" max="100" value="100" aria-label="Your battery percentage">
+            <button id="btn-checkin" class="btn-edge w-full mt-3 py-3 text-xs">CHECK IN ⚡</button>
+        </div>
+
+        <!-- Shutdown logger -->
+        <div class="border-sharp bg-white p-4 shadow-brutal">
+            <div id="shutdown-idle">
+                <button id="btn-mark-shutdown" class="btn-edge w-full py-4 text-base tracking-tight flex items-center justify-center gap-2">
+                    <span>💀 MARK SHUTDOWN TIME</span>
+                </button>
+            </div>
+
+            <div id="shutdown-armed" class="flex flex-col gap-3 hidden">
+                <div class="p-2 bg-[#FF007A] text-white border-sharp text-xs font-bold pulse-edge">
+                    💀 SHUTDOWN ARMED SINCE <span id="armed-time">--:--</span>
+                </div>
+                <button id="btn-cancel-shutdown" class="px-2 py-2 bg-white border-sharp text-[11px] font-bold uppercase shadow-brutal-sm">
+                    CANCEL
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-2 gap-3 mt-auto">
+            <div class="border-sharp bg-[#00F0FF] p-3 shadow-brutal">
+                <div class="text-[9px] uppercase font-bold tracking-widest">// POINTS</div>
+                <div id="stat-edge-points-mini" class="text-2xl font-black mt-0.5">0 PTS</div>
+            </div>
+            <div class="border-sharp bg-[#7000FF] text-white p-3 shadow-brutal">
+                <div class="text-[9px] uppercase font-bold tracking-widest">// RECORD DEAD</div>
+                <div id="stat-dead-hours-mini" class="text-2xl font-black mt-0.5">0M</div>
+            </div>
+            <div class="border-sharp bg-white p-3 shadow-brutal">
+                <div class="text-[9px] uppercase font-bold tracking-widest">// STREAK</div>
+                <div id="stat-streak-full" class="text-2xl font-black mt-0.5 text-[#FF007A]">0 DAYS</div>
+            </div>
+            <div class="border-sharp bg-white p-3 shadow-brutal">
+                <div class="text-[9px] uppercase font-bold tracking-widest">// LOWEST</div>
+                <div id="stat-lowest-full" class="text-2xl font-black mt-0.5">100%</div>
+            </div>
+        </div>
+
+        <!-- Test tools, only visible at ?debug -->
+        <div id="debug-panel" class="border-sharp bg-black text-white p-3 hidden">
+            <div class="text-[10px] font-bold uppercase mb-2">// DEBUG</div>
+            <div class="grid grid-cols-3 gap-2">
+                <button id="btn-force-1" class="btn-pink py-2 text-[10px]">FORCE 1%</button>
+                <button id="btn-sim-shutdown" class="btn-cyan py-2 text-[10px]">SIM 2.5H DEAD</button>
+                <button id="btn-reset-all" class="btn-yellow py-2 text-[10px]">RESET ALL</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- VIEW 2: CREW LEADERBOARD -->
+    <main id="view-crew" class="flex-1 flex flex-col p-4 gap-4 hidden">
+
+        <div id="crew-join" class="border-sharp bg-white p-4 shadow-brutal flex flex-col gap-3 hidden">
+            <input id="crew-name" class="field" maxlength="16" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="NAME" aria-label="Your name">
+            <input id="crew-code" class="field" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CREW CODE" aria-label="Crew code">
+            <div class="grid grid-cols-2 gap-2">
+                <button id="btn-crew-join" class="btn-cyan py-3 text-xs">JOIN CREW</button>
+                <button id="btn-crew-create" class="btn-edge py-3 text-xs">NEW CREW</button>
+            </div>
+            <div id="crew-error" class="text-[11px] font-bold text-[#FF007A] hidden" role="alert"></div>
+        </div>
+
+        <div id="crew-board" class="flex flex-col gap-3 hidden">
+            <div class="border-sharp bg-[#FFE600] p-3 shadow-brutal flex items-center justify-between">
+                <div>
+                    <div class="text-[9px] font-bold uppercase tracking-widest">// CREW CODE</div>
+                    <div id="crew-code-text" class="selectable text-2xl font-black tracking-widest">------</div>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <button id="btn-crew-invite" class="px-2 py-1 bg-black text-white text-[10px] font-bold uppercase">COPY INVITE</button>
+                    <button id="btn-crew-refresh" class="px-2 py-1 bg-white border-sharp text-[10px] font-bold uppercase">REFRESH</button>
+                </div>
+            </div>
+
+            <div class="flex border-sharp bg-white text-[10px] font-bold uppercase" role="tablist">
+                <button id="sort-low" data-sort="low" class="sort-btn flex-1 py-2 text-center border-r-sharp bg-[#21FF00]">LOWEST NOW</button>
+                <button id="sort-dead" data-sort="dead" class="sort-btn flex-1 py-2 text-center border-r-sharp bg-white">DEAD TIME</button>
+                <button id="sort-points" data-sort="points" class="sort-btn flex-1 py-2 text-center bg-white">POINTS</button>
+            </div>
+
+            <ol id="crew-list" class="flex flex-col gap-2"></ol>
+            <div id="crew-status" class="text-[10px] text-gray-600 font-bold uppercase"></div>
+            <button id="btn-crew-leave" class="text-[10px] underline text-gray-600 font-bold self-start uppercase">Leave crew</button>
+        </div>
+    </main>
+
+    <!-- VIEW 3: BADGES -->
+    <main id="view-badges" class="flex-1 flex flex-col p-4 gap-3 hidden">
+        <div id="badge-card-1" class="badge-locked border-sharp bg-white p-3 shadow-brutal flex items-center gap-3">
+            <div class="w-12 h-12 bg-[#FF007A] border-sharp flex items-center justify-center text-2xl shadow-brutal-sm">⚡</div>
+            <div class="flex-1">
+                <div class="text-sm font-black">1% SURVIVOR</div>
+                <div class="text-[10px] text-gray-700 leading-tight mt-0.5">Hit 1%.</div>
+            </div>
+        </div>
+
+        <div id="badge-card-2" class="badge-locked border-sharp bg-white p-3 shadow-brutal flex items-center gap-3">
+            <div class="w-12 h-12 bg-[#21FF00] border-sharp flex items-center justify-center text-2xl shadow-brutal-sm">💀</div>
+            <div class="flex-1">
+                <div class="text-sm font-black">FLATLINER</div>
+                <div class="text-[10px] text-gray-700 leading-tight mt-0.5">Dead 2 hours straight.</div>
+            </div>
+        </div>
+
+        <div id="badge-card-3" class="badge-locked border-sharp bg-white p-3 shadow-brutal flex items-center gap-3">
+            <div class="w-12 h-12 bg-[#7000FF] text-white border-sharp flex items-center justify-center text-2xl shadow-brutal-sm">👑</div>
+            <div class="flex-1">
+                <div class="text-sm font-black">BLACKOUT KING</div>
+                <div class="text-[10px] text-gray-700 leading-tight mt-0.5">Dead 8 hours straight.</div>
+            </div>
+        </div>
+
+        <div id="badge-card-4" class="badge-locked border-sharp bg-white p-3 shadow-brutal flex items-center gap-3">
+            <div class="w-12 h-12 bg-[#FFE600] border-sharp flex items-center justify-center text-2xl shadow-brutal-sm">🎰</div>
+            <div class="flex-1">
+                <div class="text-sm font-black">VOLTAGE GAMBLER</div>
+                <div class="text-[10px] text-gray-700 leading-tight mt-0.5">5% or less for 1 hour straight.</div>
+            </div>
+        </div>
+
+        <div id="badge-card-5" class="badge-locked border-sharp bg-white p-3 shadow-brutal flex items-center gap-3">
+            <div class="w-12 h-12 bg-[#00F0FF] border-sharp flex items-center justify-center text-2xl shadow-brutal-sm">🔋</div>
+            <div class="flex-1">
+                <div class="text-sm font-black">ZERO HERO</div>
+                <div class="text-[10px] text-gray-700 leading-tight mt-0.5">Log your first blackout.</div>
+            </div>
+        </div>
+    </main>
+
+    <!-- VIEW 4: 9:16 STORY EXPORTER -->
+    <main id="view-share" class="flex-1 flex flex-col p-4 gap-4 hidden">
+        <div class="border-sharp bg-[#FFE600] p-3 shadow-brutal">
+            <div class="flex gap-2 overflow-x-auto pb-1">
+                <button class="sticker-btn px-2.5 py-1 bg-white border-sharp text-[10px] font-bold shadow-brutal-sm whitespace-nowrap" data-sticker="SURVIVED 1%">⚡ SURVIVED 1%</button>
+                <button class="sticker-btn px-2.5 py-1 bg-white border-sharp text-[10px] font-bold shadow-brutal-sm whitespace-nowrap" data-sticker="CHARGER IS FOR LOSERS">🚫 NO CHARGER</button>
+                <button id="sticker-died" class="sticker-btn px-2.5 py-1 bg-white border-sharp text-[10px] font-bold shadow-brutal-sm whitespace-nowrap" data-sticker="BATTERY DIED">💀 BATTERY DIED</button>
+                <button class="sticker-btn px-2.5 py-1 bg-white border-sharp text-[10px] font-bold shadow-brutal-sm whitespace-nowrap" data-sticker="VOLTAGE GAMBLER">🎰 GAMBLER</button>
+            </div>
+        </div>
+
+        <div class="border-sharp bg-black p-2 shadow-brutal flex justify-center items-center">
+            <canvas id="story-canvas" width="1080" height="1920" class="w-full max-w-[250px] aspect-[9/16] border-sharp bg-[#F5F5F0]"></canvas>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+            <button id="btn-share-native" class="btn-cyan py-3 text-xs flex items-center justify-center gap-1"><span>📲 SHARE</span></button>
+            <button id="btn-download-image" class="btn-yellow py-3 text-xs flex items-center justify-center gap-1"><span>💾 SAVE</span></button>
+        </div>
+    </main>
+
+    <!-- MODAL: shutdown armed -->
+    <div id="shutdown-modal" class="fixed inset-0 modal-bg z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-[#F5F5F0] border-sharp p-5 shadow-brutal-lg max-w-xs w-full relative">
+            <h3 class="text-2xl font-black mb-2">SHUTDOWN ARMED 💀</h3>
+            <p class="text-xs text-gray-800 mb-4 border-t-sharp pt-2">
+                Let it die. When it's back on, open EDGE first.
+            </p>
+            <button id="btn-close-shutdown-modal" class="btn-edge w-full py-3 text-xs font-bold">OK</button>
+        </div>
+    </div>
+
+    <!-- MODAL: welcome back / confirm blackout -->
+    <div id="welcome-modal" class="fixed inset-0 modal-bg z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-[#F5F5F0] border-sharp p-5 shadow-brutal-lg max-w-xs w-full relative">
+            <h3 class="text-2xl font-black mb-2">DID YOUR PHONE DIE? 💀</h3>
+            <p id="welcome-text" class="text-xs text-gray-800 mb-3 border-t-sharp pt-2"></p>
+            <label class="text-[10px] font-bold uppercase block mb-3">Powered back on
+                <select id="welcome-poweron" class="field"></select>
+            </label>
+            <div class="border-sharp bg-white p-2 mb-4 text-xs font-bold">
+                <span id="welcome-dead">0M</span> DEAD · <span id="welcome-pts" class="text-[#7000FF]">+0 PTS</span>
+            </div>
+            <button id="btn-welcome-log" class="btn-edge w-full py-3 text-xs font-bold mb-2">LOG BLACKOUT ⚡</button>
+            <button id="btn-welcome-no" class="w-full py-2 bg-white border-sharp text-[11px] font-bold uppercase shadow-brutal-sm">IT NEVER DIED</button>
+        </div>
+    </div>
+
+    <!-- MODAL: install (iPhone has no install button, so this shows how) -->
+    <div id="pwa-modal" class="fixed inset-0 modal-bg z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-[#F5F5F0] border-sharp p-5 shadow-brutal-lg max-w-xs w-full relative">
+            <button id="btn-close-pwa" class="absolute top-2 right-3 text-xl font-bold" aria-label="Close">&times;</button>
+            <h3 class="text-xl font-black mb-3">ADD TO HOME SCREEN</h3>
+            <ul class="text-xs space-y-2 border-t-sharp pt-3">
+                <li><strong>iPhone (Safari):</strong> Share → Add to Home Screen</li>
+                <li><strong>Android (Chrome):</strong> ⋮ Menu → Install app</li>
+            </ul>
+        </div>
+    </div>
+
+    <div id="toast-container" class="fixed inset-x-0 mx-auto max-w-md px-4 z-40 flex flex-col gap-2 pointer-events-none" style="bottom: calc(3.5rem + env(safe-area-inset-bottom));" role="status" aria-live="polite"></div>
+
+    <script src="config.js"></script>
+    <script src="engine.js"></script>
+    <script src="crew.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
